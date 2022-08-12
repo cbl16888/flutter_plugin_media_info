@@ -17,6 +17,7 @@ import com.google.android.exoplayer2.PlaybackException;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.Player.Listener;
 import com.google.android.exoplayer2.SimpleExoPlayer;
+import com.google.android.exoplayer2.Tracks;
 import com.google.android.exoplayer2.source.ProgressiveMediaSource;
 import com.google.android.exoplayer2.source.TrackGroup;
 import com.google.android.exoplayer2.source.TrackGroupArray;
@@ -25,6 +26,8 @@ import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.util.Util;
+import com.google.common.collect.ImmutableList;
+
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.BinaryMessenger;
 import io.flutter.plugin.common.MethodCall;
@@ -178,7 +181,61 @@ public class MediaInfoPlugin implements MethodCallHandler, FlutterPlugin {
 
     final Listener listener =
         new Listener() {
+
           @Override
+          public void onTracksChanged(Tracks tracks) {
+            Listener.super.onTracksChanged(tracks);
+            ImmutableList<Tracks.Group> trackGroups = tracks.getGroups();
+            if(trackGroups.size() == 0) {
+              Log.d(TAG, "Tracks Changed, track groups currently empty");
+              return;
+            }
+
+            for (int i = 0; i < trackGroups.size(); i++) {
+              Tracks.Group tg = trackGroups.get(i);
+              for (int j = 0; j < tg.length; j++) {
+                final Format format = tg.getTrackFormat(j);
+
+                final String mimeType = format.sampleMimeType;
+                if (mimeType == null) {
+                  continue;
+                }
+
+                if (mimeType.contains("video")) {
+                  int width = format.width;
+                  int height = format.height;
+                  int rotation = format.rotationDegrees;
+
+                  // Switch the width/height if video was taken in portrait mode
+                  if (rotation == 90 || rotation == 270) {
+                    int temp = width;
+                    //noinspection SuspiciousNameCombination
+                    width = height;
+                    height = temp;
+                  }
+
+                  VideoDetail info =
+                          new VideoDetail(
+                                  width,
+                                  height,
+                                  format.frameRate,
+                                  exoPlayer.getDuration(),
+                                  (short) trackGroups.size(),
+                                  mimeType);
+                  future.complete(info);
+                  return;
+                } else if (mimeType.contains("audio")) {
+                  AudioDetail audio =
+                          new AudioDetail(exoPlayer.getDuration(), format.bitrate, mimeType);
+                  future.complete(audio);
+                  return;
+                }
+              }
+            }
+
+            future.completeExceptionally(new IOException("TracksUnreadable"));
+          }
+
           public void onTracksChanged(
               TrackGroupArray trackGroups, @NonNull TrackSelectionArray trackSelections) {
 
